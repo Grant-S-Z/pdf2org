@@ -97,8 +97,37 @@ uv run pdf2org report.pdf
 | `--model` | `minicpm-ocr` | ollama 模型名 |
 | `--workers` | `2` | OCR 并发块数 |
 | `--timeout` | `0` | 单文件总超时秒数，0 为不限制 |
+| `--device` | `auto` | 版面检测设备：`auto` / `cpu` / `cuda:0` |
 | `--keep-work` | 关 | 保留 `runs/` 中间产物 |
 | `--no-download` | 关 | 版面模型缺失时直接报错 |
+
+### GPU 加速
+
+OCR 推理由 ollama 自动使用 GPU（Metal / CUDA / ROCm），不需要本项目配置。运行后用 `ollama ps` 查看 `PROCESSOR` 列，`100% GPU` 表示全部在 GPU。
+
+版面检测默认 `--device auto`：
+
+- macOS：Paddle 没有 Metal 后端，始终用 CPU；
+- Linux + NVIDIA：检测到 `nvidia-smi` 且安装了 `paddlepaddle-gpu` 时自动用 `cuda:0`，否则回退 CPU 并提示。
+
+Linux 手动启用 GPU 版面（以 CUDA 12.9 为例）：
+
+```bash
+uv pip uninstall paddlepaddle
+uv pip install --index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ "paddlepaddle-gpu==3.3.0"
+
+# uv sync 会把 CPU 版装回来；用 --no-sync 跳过同步
+PDF2ORG_NO_SYNC=1 ./pdf2org --device auto doc.pdf
+```
+
+验证：
+
+```bash
+uv run --no-sync python -c "import paddle; print(paddle.device.is_compiled_with_cuda())"
+ollama ps
+```
+
+注意：`uv sync` 会按 `pyproject.toml` 重新安装 CPU 版 Paddle，覆盖手动安装的 GPU 版。需要长期使用 GPU 版面时，建议把 `paddlepaddle` 替换为 `paddlepaddle-gpu` 并配置 Paddle 的 CUDA 索引，或每次安装后使用 `--no-sync` / `PDF2ORG_NO_SYNC=1`。
 
 ### 输出说明
 
@@ -119,7 +148,7 @@ PDF ──PyMuPDF──► 页面图 ──PP-DocLayoutV3──► 版面块
                               Markdown ──pandoc──► Org
 ```
 
-- 版面检测在 CPU 上运行，通过 PaddleX 加载 PP-DocLayoutV3。
+- 版面检测默认自动选择设备：Linux + NVIDIA + GPU 版 Paddle 时用 CUDA，其余用 CPU；通过 PaddleX 加载 PP-DocLayoutV3。
 - 识别请求走 ollama `/api/chat`，每个块单独请求。
 - 进度条每 0.3 秒轮询 `runs/<tag>/output/*.md`（OCR 完成页）和 `runtime/page_tasks.jsonl`（版面已处理页）。
 - 成功后删除 `runs/<tag>`；失败或 `--keep-work` 时保留。
@@ -146,6 +175,7 @@ pdf2org/
 - 不做跨页表格合并，不导出图片/图表裁剪。
 - 进度只到“页”级别，块级进度 SDK 未暴露。
 - 单个请求仍有 600 秒超时；`--timeout` 控制整份文件。
+- 默认安装 CPU 版 Paddle；版面 GPU 需按“GPU 加速”一节手动安装 GPU 版。
 - 大文档耗时较长，建议保持 ollama 服务运行，避免同时跑多个 OCR 任务。
 
 ## 排障

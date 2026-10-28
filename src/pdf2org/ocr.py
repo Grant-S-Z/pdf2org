@@ -31,6 +31,40 @@ def layout_model_dir() -> Path:
     return project_root() / "models" / "PP-DocLayoutV3_infer"
 
 
+def resolve_layout_device(requested: str) -> str:
+    value = (requested or "auto").strip().lower()
+    if value != "auto":
+        return value
+    if not sys.platform.startswith("linux"):
+        return "cpu"
+    if shutil.which("nvidia-smi") is None:
+        return "cpu"
+    try:
+        probe = subprocess.run(
+            ["nvidia-smi", "-L"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "cpu"
+    if probe.returncode != 0 or "GPU" not in probe.stdout:
+        return "cpu"
+
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        version("paddlepaddle-gpu")
+    except PackageNotFoundError:
+        print(
+            "检测到 NVIDIA GPU，但当前安装的是 CPU 版 Paddle，版面检测仍用 CPU。"
+            "安装 paddlepaddle-gpu 后可启用 GPU。",
+            file=sys.stderr,
+        )
+        return "cpu"
+    return "cuda:0"
+
+
 def _request_json(url: str, payload: dict | None = None, timeout: float = 5.0) -> dict:
     data = None
     headers = {}
@@ -230,10 +264,13 @@ def run_parse(
     workers: int,
     timeout: int,
     keep_work: bool = False,
+    device: str = "auto",
 ) -> dict:
     root = project_root()
     runs_root = root / "runs"
     runs_root.mkdir(parents=True, exist_ok=True)
+    layout_device = resolve_layout_device(device)
+    print(f"  版面设备: {layout_device}", file=sys.stderr)
     run_tag = f"{source.stem}_{time.strftime('%Y%m%d_%H%M%S')}_{os.getpid()}"
     command = [
         sys.executable,
@@ -250,7 +287,7 @@ def run_parse(
         "--model",
         model,
         "--device",
-        "cpu",
+        layout_device,
         "--layout-model",
         str(layout_model_dir()),
         "--workers",
@@ -349,4 +386,5 @@ def run_parse(
         "failed_blocks": counts.get("failed_blocks", 0),
         "elapsed": elapsed,
         "run_dir": actual_run_dir,
+        "layout_device": layout_device,
     }

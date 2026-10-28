@@ -13,6 +13,9 @@ done
 root="$(cd -P "$(dirname "$source_path")" && pwd)"
 
 if command -v uv >/dev/null 2>&1; then
+    if [ "${PDF2ORG_NO_SYNC:-0}" = "1" ]; then
+        exec uv run --quiet --no-sync --project "$root" pdf2org "$@"
+    fi
     exec uv run --quiet --project "$root" pdf2org "$@"
 fi
 

@@ -16,6 +16,7 @@ from .ocr import (
     OcrError,
     check_ollama,
     ensure_layout_model,
+    resolve_layout_device,
     run_parse,
 )
 
@@ -59,6 +60,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_non_negative_int,
         default=0,
         help="单文件超时秒数，0 表示不限制（默认 0）",
+    )
+    parser.add_argument(
+        "--device",
+        default="auto",
+        help="版面检测设备：auto / cpu / cuda:0（默认 auto）",
     )
     parser.add_argument("--keep-work", action="store_true", help="保留 runs/ 下的中间产物")
     parser.add_argument(
@@ -159,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"错误: {exc}", file=sys.stderr)
         return 2
 
+    layout_device = resolve_layout_device(args.device)
     out_dir.mkdir(parents=True, exist_ok=True)
     succeeded = skipped = failed = 0
 
@@ -184,6 +191,7 @@ def main(argv: list[str] | None = None) -> int:
                 workers=args.workers,
                 timeout=args.timeout,
                 keep_work=args.keep_work,
+                device=layout_device,
             )
 
             if _needs_org(args.format):
