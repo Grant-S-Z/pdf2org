@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source_path="${BASH_SOURCE[0]}"
+while [ -L "$source_path" ]; do
+    dir="$(cd -P "$(dirname "$source_path")" && pwd)"
+    source_path="$(readlink "$source_path")"
+    case "$source_path" in
+        /*) ;;
+        *) source_path="$dir/$source_path" ;;
+    esac
+done
+root="$(cd -P "$(dirname "$source_path")" && pwd)"
+
+if command -v uv >/dev/null 2>&1; then
+    exec uv run --quiet --project "$root" pdf2org "$@"
+fi
+
+venv_bin="$root/.venv/bin/pdf2org"
+if [ -x "$venv_bin" ]; then
+    exec "$venv_bin" "$@"
+fi
+
+echo "错误: 未找到 uv，也未找到 $venv_bin。请先运行: cd \"$root\" && uv sync" >&2
+exit 127
