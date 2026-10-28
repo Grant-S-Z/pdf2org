@@ -986,7 +986,7 @@ wheels = [
 ]
 
 [[package]]
-name = "pdf-to-org"
+name = "pdf2org"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
