@@ -14,7 +14,9 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_SERVER = "http://127.0.0.1:11434"
+DEFAULT_VLLM_SERVER = "http://127.0.0.1:18499"
 DEFAULT_MODEL = "minicpm-ocr"
+BACKENDS = ("ollama", "vllm", "llamacpp", "openai")
 LAYOUT_FILES = ("inference.pdiparams", "inference.yml", "inference.json")
 PAGE_DELIMITER = "\n\n-----\n\n"
 
@@ -104,6 +106,32 @@ def check_ollama(server_url: str, model: str) -> None:
             f"模型 {model!r} 不具备 vision 能力（capabilities={capabilities}），"
             "请确认导入时同时包含了 mmproj 视觉投影文件。"
         )
+
+
+def check_openai(server_url: str, model: str) -> None:
+    base = server_url.rstrip("/")
+    try:
+        payload = _request_json(f"{base}/v1/models")
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise OcrError(
+            f"无法连接推理服务 ({server_url}): {exc}\n"
+            "先启动 vLLM/llama.cpp 服务，例如: vllm serve <模型目录> --port 18499 --served-model-name minicpm-ocr"
+        ) from exc
+
+    names = {item.get("id") for item in payload.get("data", []) if item.get("id")}
+    if names and model not in names:
+        available = ", ".join(sorted(names))
+        raise OcrError(
+            f"推理服务中没有模型 {model!r}。现有模型: {available}\n"
+            "用 --served-model-name 指定模型名，或修改 --model。"
+        )
+
+
+def check_backend(backend: str, server_url: str, model: str) -> None:
+    if backend == "ollama":
+        check_ollama(server_url, model)
+    else:
+        check_openai(server_url, model)
 
 
 def ensure_layout_model(allow_download: bool = True) -> Path:
@@ -265,12 +293,14 @@ def run_parse(
     timeout: int,
     keep_work: bool = False,
     device: str = "auto",
+    backend: str = "ollama",
 ) -> dict:
     root = project_root()
     runs_root = root / "runs"
     runs_root.mkdir(parents=True, exist_ok=True)
     layout_device = resolve_layout_device(device)
     print(f"  版面设备: {layout_device}", file=sys.stderr)
+    print(f"  推理后端: {backend} ({server_url})", file=sys.stderr)
     run_tag = f"{source.stem}_{time.strftime('%Y%m%d_%H%M%S')}_{os.getpid()}"
     command = [
         sys.executable,
@@ -281,7 +311,7 @@ def run_parse(
         "-o",
         str(out_md.resolve()),
         "--backend",
-        "ollama",
+        backend,
         "--server-url",
         server_url,
         "--model",

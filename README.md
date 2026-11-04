@@ -129,6 +129,26 @@ ollama ps
 
 注意：`uv sync` 会按 `pyproject.toml` 重新安装 CPU 版 Paddle，覆盖手动安装的 GPU 版。需要长期使用 GPU 版面时，建议把 `paddlepaddle` 替换为 `paddlepaddle-gpu` 并配置 Paddle 的 CUDA 索引，或每次安装后使用 `--no-sync` / `PDF2ORG_NO_SYNC=1`。
 
+### vLLM 后端
+
+默认走 ollama。vLLM 把采样和批处理放到 GPU，在 CPU 受限（例如只能用单核）时更快，输出与 ollama 基本一致。
+
+```bash
+# 1. 准备 HF 权重（ModelScope）
+#    https://modelscope.cn/models/OpenBMB/MiniCPM-OCR-1.0 → ~/models/MiniCPM-OCR-1.0-hf
+
+# 2. 创建独立 vLLM 环境并打兼容补丁
+./scripts/setup_vllm.sh
+
+# 3. 启动服务（默认 GPU 1、端口 18499、绑定 0 号核）
+./scripts/serve_vllm.sh &
+
+# 4. 用 vllm 后端转换
+./pdf2org report.pdf --backend vllm
+```
+
+也可以用环境变量指定后端与服务地址：`PDF2ORG_BACKEND=vllm`、`PDF2ORG_SERVER_URL=http://127.0.0.1:18499`。可用的后端为 `ollama` / `vllm` / `llamacpp` / `openai`。
+
 ### 输出说明
 
 - `.md`：SDK 原始 Markdown，表格可能是 HTML。

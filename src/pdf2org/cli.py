@@ -11,10 +11,12 @@ from pathlib import Path
 
 from .convert import ConversionError, md_to_org
 from .ocr import (
+    BACKENDS,
     DEFAULT_MODEL,
     DEFAULT_SERVER,
+    DEFAULT_VLLM_SERVER,
     OcrError,
-    check_ollama,
+    check_backend,
     ensure_layout_model,
     resolve_layout_device,
     run_parse,
@@ -52,8 +54,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("-o", "--out-dir", default="out", help="输出目录，默认 ./out")
     parser.add_argument("--force", action="store_true", help="覆盖已存在的输出")
-    parser.add_argument("--server-url", default=DEFAULT_SERVER, help=f"ollama 地址，默认 {DEFAULT_SERVER}")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"ollama 模型名，默认 {DEFAULT_MODEL}")
+    parser.add_argument(
+        "--backend",
+        choices=BACKENDS,
+        default=os.environ.get("PDF2ORG_BACKEND", "ollama"),
+        help="推理后端，默认 ollama（也可用环境变量 PDF2ORG_BACKEND 指定）",
+    )
+    parser.add_argument(
+        "--server-url",
+        default=None,
+        help=f"推理服务地址；ollama 默认 {DEFAULT_SERVER}，vLLM 默认 {DEFAULT_VLLM_SERVER}",
+    )
+    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"服务中的模型名，默认 {DEFAULT_MODEL}")
     parser.add_argument("--workers", type=_positive_int, default=2, help="OCR 并发块数，默认 2")
     parser.add_argument(
         "--timeout",
@@ -147,6 +159,10 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.reconfigure(line_buffering=True)
 
     args = _build_parser().parse_args(argv)
+    if args.server_url is None:
+        args.server_url = os.environ.get("PDF2ORG_SERVER_URL") or (
+            DEFAULT_SERVER if args.backend == "ollama" else DEFAULT_VLLM_SERVER
+        )
 
     try:
         files = _discover(args.inputs)
@@ -157,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
 
     out_dir = Path(args.out_dir).expanduser().resolve()
     try:
-        check_ollama(args.server_url, args.model)
+        check_backend(args.backend, args.server_url, args.model)
         if _needs_org(args.format) and not shutil.which("pandoc"):
             raise OcrError("找不到 pandoc，请先安装: brew install pandoc")
         ensure_layout_model(allow_download=not args.no_download)
@@ -192,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
                 timeout=args.timeout,
                 keep_work=args.keep_work,
                 device=layout_device,
+                backend=args.backend,
             )
 
             if _needs_org(args.format):
